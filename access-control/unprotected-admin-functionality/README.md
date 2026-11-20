@@ -24,11 +24,7 @@ Access the administrator panel and delete the user `carlos`.
 
 1. I opened the lab and inspected the login page. I recognized that the objective was not to authenticate through the login form.
 
-   [ADICIONAR PRINT AQUI]
-
 2. I considered that websites sometimes disclose paths through the `robots.txt` file, so I requested `/robots.txt` on the lab's host.
-
-   [ADICIONAR PRINT AQUI]
 
 3. In the response, I found the following directive:
 
@@ -38,11 +34,8 @@ Access the administrator panel and delete the user `carlos`.
 
 4. I navigated directly to `/administrator-panel` without logging in. The application displayed the administrative panel and its user list, which showed that access control was missing.
 
-   [ADICIONAR PRINT AQUI]
-
 5. I clicked `Delete` next to the user `carlos`. The lab confirmed that it was solved.
 
-   [ADICIONAR PRINT AQUI]
 
 ## Root cause
 
