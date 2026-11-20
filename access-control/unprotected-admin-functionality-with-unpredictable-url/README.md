@@ -1,86 +1,137 @@
-# Unprotected admin functionality with unpredictable URL (Apprentice)
+# User role controlled by request parameter (Apprentice)
 
 Platform: PortSwigger Web Security Academy  
 Category: Access Control (Broken Access Control)  
-Difficulty: Apprentice
+Difficulty: Apprentice  
+Status: Solved
 
 ## Summary
 
-In this lab, I found an administrative panel whose URL was unpredictable and was not disclosed in `robots.txt`. Instead of trying to guess the path or log in, I inspected the home page source code.
+In this lab, I exploited a broken access control vulnerability caused by the application trusting a client-controlled cookie to determine administrative privileges.
 
-A JavaScript snippet contained a hidden link to the administrative panel. I extracted the path, accessed it directly without authentication, and deleted the user `carlos`, which solved the lab.
+After logging in as a regular user, I inspected the `Admin` cookie and found that it was set to `false`. By changing its value to `true`, I gained access to the administrative panel at `/admin` and deleted the user `carlos`.
 
 ## Vulnerability category
 
-Broken Access Control - unauthenticated access to administrative functionality.
+Broken Access Control - Client-side access control.
 
-The application hid the administrative link in client-side JavaScript but did not enforce authorization on the server. Hiding a link does not prevent a user from requesting the underlying endpoint directly.
+The application relied on a cookie supplied by the browser to determine whether the current user had administrative privileges.
+
+Because the cookie was controlled by the client and was not securely validated by the server, a regular user could modify it and gain unauthorized administrative access.
 
 ## Lab objective
 
-Discover the unpredictable administrative URL, access the panel, and delete the user `carlos`.
+Access the `/admin` panel as a regular user and delete the user `carlos`.
 
 ## Step-by-step
 
-1. I opened the lab and inspected the login page. I understood that the objective was not to authenticate through the login form.
+1. I logged in using the credentials provided by the lab:
 
-2. The administrative path was unpredictable and was not listed in `robots.txt`, so the approach from the previous lab did not apply.
+   - Username: `wiener`
+   - Password: `peter`
 
-3. I returned to the home page and opened its source code with `Ctrl+U`.
+2. I attempted to access the administrative panel at:
 
-4. I searched the source for the term `admin` and found a JavaScript snippet that controlled whether the administrative link was displayed:
-
-   ```javascript
-   var isAdmin = false;
-   if (isAdmin) {
-       // ...
-   }
+   ```text
+   /admin
    ```
 
-5. In the same JavaScript code, I found the assignment that revealed the hidden path:
+   The application denied access.
 
-   ```javascript
-   adminPanelTag.setAttribute('href', '/admin-m5skac');
+3. I inspected the cookies sent by the browser and found the following values:
+
+   ```http
+   Cookie: Admin=false; session=nJnEqm7paKaA9OTY20AV7ssTqojqo0i0
    ```
 
-   This showed that `m5skac` was part of the URL path. The `href` attribute defines a link destination; it was not a password or login credential.
+   The `Admin` cookie appeared to control whether the user could access administrative functionality.
 
-6. I had already noticed the value `m5skac` in Burp Suite, but initially misunderstood it and tried to use it as a password in the login form. After inspecting the source code, I understood that it belonged to the administrative URL.
+4. I modified the `Admin` cookie from `false` to `true`, using the browser's Developer Tools or an intercepted request in Burp Suite.
 
-7. I navigated directly to `/admin-m5skac` without authenticating. The administrative panel loaded, confirming that the server did not enforce the required access control.
+   ```http
+   Cookie: Admin=true; session=nJnEqm7paKaA9OTY20AV7ssTqojqo0i0
+   ```
 
-8. I clicked `Delete` next to the user `carlos`, completing the lab.
+5. I requested `/admin` again with the modified cookie.
+
+   The administrative panel loaded successfully, confirming that the application trusted the client-controlled cookie when making authorization decisions.
+
+6. I located the user `carlos` in the administrative panel and clicked the `Delete` option.
+
+   The application sent a request similar to:
+
+   ```http
+   GET /admin/delete?username=carlos
+   ```
+
+7. The user `carlos` was deleted, successfully completing the lab.
 
 ## Root cause
 
-The application relied on client-side JavaScript to hide the administrative link. The `isAdmin` variable was set to `false`, so the link was not displayed in the normal page interface.
+The application made authorization decisions based on the value of the `Admin` cookie.
 
-However, client-side code is visible and can be inspected or modified by users. More importantly, the server did not verify whether the requester was authorized to access the administrative endpoint. The hidden link therefore provided no actual access control.
+Since this cookie was supplied by the client, the user could modify it without needing administrative credentials.
+
+The server treated a client-controlled value as proof of authorization instead of checking the authenticated user's actual permissions through a trusted server-side source.
+
+## Vulnerable implementation
+
+An insecure implementation might look like this:
+
+```python
+if request.cookies['Admin'] == 'true':
+    liberar_admin()
+```
+
+This approach is insecure because the application trusts a value that the user can modify.
+
+## Secure implementation
+
+Authorization should be based on the authenticated user's identity and permissions stored or validated server-side.
+
+For example:
+
+```python
+usuario = carregar_usuario(session.user_id)
+
+if usuario.role == 'admin':
+    liberar_admin()
+```
+
+The server must independently verify the user's role before granting access to administrative functionality.
 
 ## Real-world impact
 
-If an application exposes administrative routes in client-side JavaScript and fails to enforce authorization on the server, an unauthenticated user may discover and directly access sensitive functionality.
+If an application trusts client-controlled cookies to determine user permissions, an attacker may be able to escalate privileges without valid authorization.
 
-During an authorized security assessment or bug bounty engagement, reviewing JavaScript can help identify:
+Potential consequences include:
 
-- Hidden application routes and administrative paths.
-- API endpoints referenced by front-end code.
-- Client-side feature flags and authorization-related UI logic.
-- Potentially exposed credentials or sensitive configuration values, which should be handled carefully and reported according to the program rules.
-
-Finding a route in JavaScript does not by itself prove a vulnerability. The security issue exists when the server allows an unauthorized user to access or perform protected actions.
+- Unauthorized access to administrative panels.
+- Modification or deletion of other users' accounts.
+- Exposure of sensitive application data.
+- Unauthorized changes to system configuration.
+- Administrative actions performed by regular users.
 
 ## Mitigation
 
-- Enforce authorization on the server for every sensitive endpoint and administrative action.
-- Deny access by default and explicitly grant permissions to authorized roles.
-- Validate the user's permissions on every request, regardless of whether a link is visible in the interface.
-- Treat all client-side code, variables, feature flags, and hidden links as accessible to users.
-- Do not rely on unpredictable URLs or obscured routes as security controls.
-- Avoid embedding secrets in front-end code. Store sensitive credentials server-side and rotate any secret that has been exposed.
-- Add automated tests to verify that unauthenticated and unauthorized users cannot access administrative functionality.
+- Never trust client-controlled cookies as proof of authorization.
+- Enforce access control on the server for every protected endpoint.
+- Retrieve user roles and permissions from a trusted server-side source.
+- Associate authorization decisions with the authenticated session.
+- Validate permissions before executing sensitive operations.
+- Deny access by default.
+- Use signed tokens when applicable, and validate their signatures and claims correctly.
+- Apply appropriate HTTP methods and protections to sensitive operations. State-changing actions should not be performed through GET requests.
+
+## Key takeaway
+
+Client-side data is not a source of truth.
+
+Anything sent by the browser can potentially be modified, including cookies, URL parameters, hidden form fields, and HTTP headers.
+
+Identity, roles, and permissions must be verified and enforced server-side.
 
 ## References
 
 - [PortSwigger Web Security Academy - Access control](https://portswigger.net/web-security/access-control)
-- [PortSwigger Web Security Academy - Unprotected admin functionality with unpredictable URL](https://portswigger.net/web-security/access-control/lab-unprotected-admin-functionality-with-unpredictable-url)
+- [PortSwigger Web Security Academy - User role controlled by request parameter](https://portswigger.net/web-security/access-control/lab-user-role-controlled-by-request-parameter)
